@@ -1,0 +1,15 @@
+name: 'dbt_milkyway'
+version: '1.0.0'
+profile: 
+
+models:
+  dbt_milkyway:
+    +schema: analytics
+    +materialized: table
+
+vars:
+  source_dataset: "raw.user_activity"
+  entity_id: "user_id"
+  event_timestamp: "event_time"
+  event_type_column: "event_type"
+  event_type: ["login", "purchase"]
