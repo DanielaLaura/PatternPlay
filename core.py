@@ -1,76 +1,115 @@
+
 import json
 import os
 import subprocess
+from typing import Any, Dict
 
 
 class SchemaAnalytics:
-    def __init__(self, schema_desc, dbt_project_dir="dbt_milkyway"):
-        """
-        schema_desc example (what you pass from app.py):
+    """
+    Bridge between the Streamlit UI and dbt.
 
-        {
-            "dataset_name": "raw.user_activity",   # used only for display if you want
-            "entity_id": "user_id",
-            "event_timestamp": "event_time",
-            "event_type": ["login", "purchase"]
-        }
+    Supported patterns (dbt models):
+      - 'cumulative'           (your existing time-series macro)
+      - 'growth_accounting'
+      - 'retention'
+      - 'cumulative_snapshot'  (the new outer-join snapshot macro)
+    """
 
-        NOTE: dbt macros expect vars named:
-          - source_dataset
-          - entity_id
-          - event_timestamp
-          - event_type (optional)
-        We'll map dataset_name -> source_dataset when building vars.
-        """
-        self.schema = schema_desc
+    def __init__(self, pattern: str, params: Dict[str, Any], dbt_project_dir: str = "dbt_milkyway"):
+        self.pattern = pattern
+        self.params = params
         self.dbt_project_dir = dbt_project_dir
 
-    # --- build vars for dbt from the Streamlit schema ---
-    def _dbt_vars(self):
-        vars_payload = {
-            "source_dataset": self.schema["dataset_name"],
-            "entity_id": self.schema["entity_id"],
-            "event_timestamp": self.schema["event_timestamp"],
-        }
-        if self.schema.get("event_type") is not None:
-            vars_payload["event_type"] = self.schema["event_type"]
-        return json.dumps(vars_payload)
+    # ---------- build dbt --vars ----------
 
-    # --- compile model + return compiled SQL (for "Generate SQL" button) ---
-    def generate_sql(self, pattern, **_ignored):
-        # compile the specific model
-        subprocess.run(
+    def _build_vars(self) -> str:
+        """
+        Build a JSON string for dbt --vars based on the selected pattern.
+        """
+        if self.pattern in ("cumulative", "growth_accounting", "retention"):
+            # Patterns using the simple schema interface
+            payload = {
+                "source_dataset": self.params["dataset_name"],
+                "entity_id": self.params["entity_id"],
+                "event_timestamp": self.params["event_timestamp"],
+                "event_type": self.params.get("event_type"),
+            }
+
+        elif self.pattern == "cumulative_snapshot":
+            # Outer-join cumulative snapshot pattern
+            payload = {
+                "snapshot_table": self.params["snapshot_table"],
+                "fact_table": self.params["fact_table"],
+                "key_column": self.params["key_column"],
+                "period_column": self.params["period_column"],
+                "prev_period": self.params["prev_period"],
+                "curr_period": self.params["curr_period"],
+                "metric_type": self.params.get("metric_type", "count"),
+                "metric_column": self.params.get("metric_column"),
+                "today_col_name": self.params.get("today_col_name", "today_value"),
+                "cumulative_col_name": self.params.get("cumulative_col_name", "cumulative_value"),
+            }
+
+        else:
+            raise ValueError(f"Unknown pattern: {self.pattern}")
+
+        return json.dumps(payload)
+
+    # ---------- compile & return SQL ----------
+
+    def generate_sql(self) -> str:
+        """
+        Run `dbt compile` for the selected model and return the compiled SQL.
+        """
+        vars_str = self._build_vars()
+
+        result = subprocess.run(
             [
-                "dbt", "compile",
-                "--project-dir", self.dbt_project_dir,
-                "--models", pattern,
-                "--vars", self._dbt_vars(),
+                "dbt",
+                "compile",
+                "--project-dir",
+                self.dbt_project_dir,
+                "--models",
+                self.pattern,
+                "--vars",
+                vars_str,
             ],
-            check=True,
             capture_output=True,
             text=True,
         )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr)
 
-        # read compiled SQL that dbt wrote
         compiled_path = os.path.join(
             self.dbt_project_dir,
             "target",
             "compiled",
             "dbt_milkyway",
             "models",
-            f"{pattern}.sql",
+            f"{self.pattern}.sql",
         )
         with open(compiled_path, "r") as f:
             return f.read()
 
-    # --- run the dbt model incrementally (for your "Run dbt Incremental" button) ---
-    def run_dbt(self, pattern):
+    # ---------- run dbt model ----------
+
+    def run_dbt(self) -> subprocess.CompletedProcess:
+        """
+        Run `dbt run` for the selected model and return the CompletedProcess.
+        """
+        vars_str = self._build_vars()
+
         result = subprocess.run(
             [
-                "dbt", "run",
-                "--project-dir", self.dbt_project_dir,
-                "--models", pattern,
-                "--vars", self._dbt_vars(),
+                "dbt",
+                "run",
+                "--project-dir",
+                self.dbt_project_dir,
+                "--models",
+                self.pattern,
+                "--vars",
+                vars_str,
             ],
             capture_output=True,
             text=True,
