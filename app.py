@@ -13,10 +13,9 @@ st.header("Select analytical pattern")
 pattern = st.selectbox(
     "Pattern",
     [
-        "cumulative",           # existing simple time-series macro
         "growth_accounting",
         "retention",
-        "cumulative_snapshot",  # new outer-join snapshot macro
+        "cumulative_snapshot",  # outer-join snapshot macro
     ],
 )
 
@@ -24,8 +23,8 @@ params = {}
 
 # --- 2. Pattern-specific parameter inputs ---
 
-if pattern in ("cumulative", "growth_accounting", "retention"):
-    st.subheader("Inputs for time-series patterns (cumulative / growth / retention)")
+if pattern in ("growth_accounting", "retention"):
+    st.subheader("Inputs for time-series patterns (growth / retention)")
 
     dataset_name = st.text_input("Source dataset / table", "raw.user_activity")
     entity_id = st.text_input("Entity ID column", "user_id")

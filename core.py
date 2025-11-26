@@ -10,10 +10,9 @@ class SchemaAnalytics:
     Bridge between the Streamlit UI and dbt.
 
     Supported patterns (dbt models):
-      - 'cumulative'           (your existing time-series macro)
       - 'growth_accounting'
       - 'retention'
-      - 'cumulative_snapshot'  (the new outer-join snapshot macro)
+      - 'cumulative_snapshot'  (the outer-join snapshot macro)
     """
 
     def __init__(self, pattern: str, params: Dict[str, Any], dbt_project_dir: str = "dbt_milkyway"):
@@ -27,7 +26,7 @@ class SchemaAnalytics:
         """
         Build a JSON string for dbt --vars based on the selected pattern.
         """
-        if self.pattern in ("cumulative", "growth_accounting", "retention"):
+        if self.pattern in ("growth_accounting", "retention"):
             # Patterns using the simple schema interface
             payload = {
                 "source_dataset": self.params["dataset_name"],
