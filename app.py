@@ -2,7 +2,7 @@
 import streamlit as st
 from core import SchemaAnalytics
 import pandas as pd
-import sqlalchemy
+from google.cloud import bigquery
 
 st.set_page_config(page_title="MilkyWay Analytics", layout="wide")
 st.title("MilkyWay Analytics Framework")
@@ -92,10 +92,10 @@ elif pattern == "cumulative_snapshot":
         "cumulative_col_name": cumulative_col_name,
     }
 
-# --- 3. Optional: Warehouse connection for preview ---
+# --- 3. BigQuery connection for preview ---
 
-st.header("Warehouse Connection (Optional)")
-db_url = st.text_input("SQLAlchemy connection URL", "")
+st.header("BigQuery Preview (Optional)")
+st.info("Uses your authenticated Google Cloud credentials to preview results.")
 
 
 def build_sa() -> SchemaAnalytics:
@@ -116,16 +116,16 @@ if st.button("Generate SQL"):
         st.error(str(e))
 
 
-# --- 5. Preview results (if db_url provided) ---
+# --- 5. Preview results using BigQuery ---
 
-if st.button("Preview Results") and db_url:
+if st.button("Preview Results"):
     try:
         sa = build_sa()
         sql = sa.generate_sql()
 
-        engine = sqlalchemy.create_engine(db_url)
-        with engine.connect() as conn:
-            df = pd.read_sql_query(f"SELECT * FROM ({sql}) LIMIT 100", conn)
+        client = bigquery.Client(project="repeatable-analyses")
+        query = f"SELECT * FROM ({sql}) LIMIT 100"
+        df = client.query(query).to_dataframe()
 
         st.subheader("Preview")
         st.dataframe(df)
