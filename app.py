@@ -1,4 +1,19 @@
 
+import warnings
+import sys
+warnings.filterwarnings("ignore")
+# Suppress urllib3 warning before any imports
+if not sys.warnoptions:
+    import os
+    os.environ["PYTHONWARNINGS"] = "ignore"
+
+# Fix for Python 3.9 compatibility
+import importlib.metadata
+if not hasattr(importlib.metadata, 'packages_distributions'):
+    def _packages_distributions():
+        return {}
+    importlib.metadata.packages_distributions = _packages_distributions
+
 import streamlit as st
 from core import SchemaAnalytics
 import pandas as pd
