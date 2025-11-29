@@ -1,6 +1,6 @@
 name: 'dbt_milkyway'
 version: '1.0.0'
-profile: 
+profile: 'dbt_milkyway' 
 
 models:
   dbt_milkyway:

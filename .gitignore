@@ -1,5 +1,7 @@
-
+# project specific
 /patternenv
+/dbt_milkyway/target/
+/dbt/milkyway/.user.yml
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
