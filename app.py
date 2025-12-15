@@ -1,19 +1,4 @@
 
-import warnings
-import sys
-warnings.filterwarnings("ignore")
-# Suppress urllib3 warning before any imports
-if not sys.warnoptions:
-    import os
-    os.environ["PYTHONWARNINGS"] = "ignore"
-
-# Fix for Python 3.9 compatibility
-import importlib.metadata
-if not hasattr(importlib.metadata, 'packages_distributions'):
-    def _packages_distributions():
-        return {}
-    importlib.metadata.packages_distributions = _packages_distributions
-
 import streamlit as st
 from core import SchemaAnalytics
 import pandas as pd
@@ -21,6 +6,37 @@ from google.cloud import bigquery
 
 st.set_page_config(page_title="MilkyWay Analytics", layout="wide")
 st.title("MilkyWay Analytics Framework")
+
+# BigQuery client for fetching table schemas
+@st.cache_resource
+def get_bq_client():
+    return bigquery.Client(project="repeatable-analyses")
+
+@st.cache_data(ttl=300)
+def get_table_columns(table_name: str) -> list:
+    """Fetch column names from a BigQuery table."""
+    try:
+        client = get_bq_client()
+        # Handle dataset.table format
+        if "." in table_name:
+            full_table = f"repeatable-analyses.{table_name}"
+        else:
+            full_table = f"repeatable-analyses.sessions.{table_name}"
+        
+        table = client.get_table(full_table)
+        return [field.name for field in table.schema]
+    except Exception:
+        return []
+
+@st.cache_data(ttl=300)
+def get_tables_in_dataset(dataset: str = "sessions") -> list:
+    """Fetch table names from a BigQuery dataset."""
+    try:
+        client = get_bq_client()
+        tables = client.list_tables(f"repeatable-analyses.{dataset}")
+        return [f"{dataset}.{t.table_id}" for t in tables]
+    except Exception:
+        return []
 
 # --- 1. Choose analytical pattern ---
 
@@ -38,26 +54,77 @@ params = {}
 
 # --- 2. Pattern-specific parameter inputs ---
 
-if pattern in ("growth_accounting", "retention"):
-    st.subheader("Inputs for time-series patterns (growth / retention)")
-
-    dataset_name = st.text_input("Source dataset / table", "raw.user_activity")
-    entity_id = st.text_input("Entity ID column", "user_id")
-    event_timestamp = st.text_input("Event timestamp column", "event_time")
-    event_type_input = st.text_input(
-        "Event type(s) (comma separated, optional)", "login,purchase"
-    )
-    event_type = (
-        [x.strip() for x in event_type_input.split(",")]
-        if event_type_input.strip()
-        else None
-    )
+if pattern == "growth_accounting":
+    st.subheader("Inputs for Growth Accounting")
+    
+    st.markdown("**Activity Data (Required)**")
+    activity_table = st.text_input("Activity table (dataset.table)", "sessions.user_activity", key="ga_activity_table")
+    
+    # Fetch columns from activity table
+    activity_columns = get_table_columns(activity_table) if activity_table else []
+    if activity_columns:
+        activity_customer_id = st.selectbox("Customer ID column", activity_columns, key="ga_customer_id")
+        activity_timestamp = st.selectbox("Timestamp column", activity_columns, key="ga_timestamp")
+    else:
+        st.warning(f"Could not fetch columns from '{activity_table}'. Enter column names manually.")
+        activity_customer_id = st.text_input("Customer ID column", "user_id", key="ga_customer_id_manual")
+        activity_timestamp = st.text_input("Timestamp column", "event_time", key="ga_timestamp_manual")
+    
+    st.markdown("**Time Grain**")
+    time_grain = st.selectbox("Time grain", ["DAY", "WEEK", "MONTH", "QUARTER", "YEAR"], index=2, key="ga_time_grain")
+    
+    st.markdown("**First Activation Data (Optional)**")
+    use_separate_activation = st.checkbox("Use separate first activation table", key="ga_use_activation")
+    first_activation_table = None
+    first_activation_customer_id = None
+    first_activation_timestamp = None
+    if use_separate_activation:
+        first_activation_table = st.text_input("First activation table (dataset.table)", "sessions.customer_activations", key="ga_activation_table")
+        activation_columns = get_table_columns(first_activation_table) if first_activation_table else []
+        if activation_columns:
+            first_activation_customer_id = st.selectbox("Activation - Customer ID column", activation_columns, key="ga_act_customer_id")
+            first_activation_timestamp = st.selectbox("Activation - Timestamp column", activation_columns, key="ga_act_timestamp")
+        else:
+            st.warning(f"Could not fetch columns from '{first_activation_table}'. Enter column names manually.")
+            first_activation_customer_id = st.text_input("Activation - Customer ID column", "customer_id", key="ga_act_customer_id_manual")
+            first_activation_timestamp = st.text_input("Activation - Timestamp column", "activation_timestamp", key="ga_act_timestamp_manual")
+    
+    st.markdown("**Date Spine (Optional)**")
+    use_date_spine = st.checkbox("Use external date spine table", key="ga_use_spine")
+    date_spine_table = None
+    date_spine_column = None
+    if use_date_spine:
+        date_spine_table = st.text_input("Date spine table (dataset.table)", "sessions.date_spine", key="ga_spine_table")
+        spine_columns = get_table_columns(date_spine_table) if date_spine_table else []
+        if spine_columns:
+            date_spine_column = st.selectbox("Date column", spine_columns, key="ga_spine_column")
+        else:
+            st.warning(f"Could not fetch columns from '{date_spine_table}'. Enter column name manually.")
+            date_spine_column = st.text_input("Date column", "date_day", key="ga_spine_column_manual")
 
     params = {
-        "dataset_name": dataset_name,
-        "entity_id": entity_id,
-        "event_timestamp": event_timestamp,
-        "event_type": event_type,
+        "activity_table": activity_table,
+        "activity_customer_id": activity_customer_id,
+        "activity_timestamp": activity_timestamp,
+        "time_grain": time_grain,
+        "first_activation_table": first_activation_table,
+        "first_activation_customer_id": first_activation_customer_id,
+        "first_activation_timestamp": first_activation_timestamp,
+        "date_spine_table": date_spine_table,
+        "date_spine_column": date_spine_column,
+    }
+
+elif pattern == "retention":
+    st.subheader("Inputs for Retention")
+
+    source_table = st.text_input("Source table", "sessions.user_activity")
+    customer_id = st.text_input("Customer ID column", "user_id")
+    activity_timestamp = st.text_input("Activity timestamp column", "event_time")
+
+    params = {
+        "source_table": source_table,
+        "customer_id": customer_id,
+        "activity_timestamp": activity_timestamp,
     }
 
 elif pattern == "cumulative_snapshot":

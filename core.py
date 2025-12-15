@@ -26,13 +26,29 @@ class SchemaAnalytics:
         """
         Build a JSON string for dbt --vars based on the selected pattern.
         """
-        if self.pattern in ("growth_accounting", "retention"):
-            # Patterns using the simple schema interface
+        if self.pattern == "growth_accounting":
+            # Growth accounting - fully configurable
             payload = {
-                "source_dataset": self.params["dataset_name"],
-                "entity_id": self.params["entity_id"],
-                "event_timestamp": self.params["event_timestamp"],
-                "event_type": self.params.get("event_type"),
+                "activity_table": self.params["activity_table"],
+                "activity_customer_id": self.params["activity_customer_id"],
+                "activity_timestamp": self.params["activity_timestamp"],
+                "time_grain": self.params.get("time_grain", "MONTH"),
+            }
+            # Optional params - only add if provided
+            if self.params.get("first_activation_table"):
+                payload["first_activation_table"] = self.params["first_activation_table"]
+                payload["first_activation_customer_id"] = self.params.get("first_activation_customer_id")
+                payload["first_activation_timestamp"] = self.params.get("first_activation_timestamp")
+            if self.params.get("date_spine_table"):
+                payload["date_spine_table"] = self.params["date_spine_table"]
+                payload["date_spine_column"] = self.params.get("date_spine_column")
+        
+        elif self.pattern == "retention":
+            # Retention pattern
+            payload = {
+                "source_table": self.params["source_table"],
+                "customer_id": self.params["customer_id"],
+                "activity_timestamp": self.params["activity_timestamp"],
             }
 
         elif self.pattern == "cumulative_snapshot":
@@ -69,6 +85,8 @@ class SchemaAnalytics:
                 "compile",
                 "--project-dir",
                 self.dbt_project_dir,
+                "--profiles-dir",
+                self.dbt_project_dir,
                 "--models",
                 self.pattern,
                 "--vars",
@@ -104,6 +122,8 @@ class SchemaAnalytics:
                 "dbt",
                 "run",
                 "--project-dir",
+                self.dbt_project_dir,
+                "--profiles-dir",
                 self.dbt_project_dir,
                 "--models",
                 self.pattern,

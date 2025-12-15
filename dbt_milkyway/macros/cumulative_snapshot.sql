@@ -1,22 +1,34 @@
 {% macro cumulative_snapshot(
-    snapshot_table,          -- e.g. ref('user_snapshot') or a table name string
-    fact_table,              -- e.g. ref('user_events') or a table name string
-    key_column,              -- e.g. 'user_id'
-    period_column,           -- e.g. 'dt' or 'year'
-    prev_period,             -- e.g. "'1969-01-01'" or 1969
-    curr_period,             -- e.g. "'1970-01-01'" or 1970
-    metric_type='count',     -- 'count' or 'sum'
-    metric_column=None,      -- used only if metric_type='sum'
+    snapshot_table,
+    fact_table,
+    key_column,
+    period_column,
+    prev_period,
+    curr_period,
+    metric_type='count',
+    metric_column=None,
     today_col_name='today_value',
     cumulative_col_name='cumulative_value'
 ) %}
 
-    {# metric expression: COUNT(*) or SUM(column) #}
-    {% if metric_type == 'sum' and metric_column %}
-        {% set metric_expr = "SUM(" ~ metric_column ~ ")" %}
-    {% else %}
-        {% set metric_expr = "COUNT(*)" %}
-    {% endif %}
+{# 
+  Cumulative snapshot pattern using outer join
+  - snapshot_table: e.g. ref('user_snapshot') or a table name string
+  - fact_table: e.g. ref('user_events') or a table name string
+  - key_column: e.g. 'user_id'
+  - period_column: e.g. 'dt' or 'year'
+  - prev_period: e.g. "'1969-01-01'" or 1969
+  - curr_period: e.g. "'1970-01-01'" or 1970
+  - metric_type: 'count' or 'sum'
+  - metric_column: used only if metric_type='sum'
+#}
+
+{# metric expression: COUNT(*) or SUM(column) #}
+{% if metric_type == 'sum' and metric_column %}
+    {% set metric_expr = "SUM(" ~ metric_column ~ ")" %}
+{% else %}
+    {% set metric_expr = "COUNT(*)" %}
+{% endif %}
 
 WITH yesterday AS (
     SELECT
