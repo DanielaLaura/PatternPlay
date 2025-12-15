@@ -1,10 +1,80 @@
 
 import streamlit as st
 from core import SchemaAnalytics
+from agent import get_agent
 import pandas as pd
 from google.cloud import bigquery
 
 st.set_page_config(page_title="MilkyWay Analytics", layout="wide")
+
+# --- Agent Sidebar ---
+with st.sidebar:
+    st.header("🤖 Analytics Agent")
+    st.caption("Ask me anything about your data or patterns")
+    
+    # Initialize chat history
+    if "agent_messages" not in st.session_state:
+        st.session_state.agent_messages = []
+    if "suggested_config" not in st.session_state:
+        st.session_state.suggested_config = None
+    
+    # Display chat history
+    for msg in st.session_state.agent_messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+    
+    # Chat input
+    if prompt := st.chat_input("Ask the agent...", key="agent_input"):
+        # Add user message
+        st.session_state.agent_messages.append({"role": "user", "content": prompt})
+        
+        # Get agent response
+        agent = get_agent()
+        response = agent.process_message(prompt)
+        
+        # Store suggested config if any
+        if response.get("suggested_config"):
+            st.session_state.suggested_config = response["suggested_config"]
+        
+        # Add agent response
+        st.session_state.agent_messages.append({"role": "assistant", "content": response["text"]})
+        
+        st.rerun()
+    
+    # Apply configuration button
+    if st.session_state.suggested_config:
+        st.divider()
+        st.markdown("**Suggested Configuration:**")
+        st.json(st.session_state.suggested_config)
+        if st.button("✅ Apply Configuration"):
+            config = st.session_state.suggested_config
+            # Store in session state for form to pick up
+            if "pattern" in config:
+                st.session_state["selected_pattern"] = config["pattern"]
+            if "activity_table" in config:
+                st.session_state["ga_activity_table"] = config["activity_table"]
+            if "time_grain" in config:
+                st.session_state["ga_time_grain"] = ["DAY", "WEEK", "MONTH", "QUARTER", "YEAR"].index(config["time_grain"])
+            st.session_state.suggested_config = None
+            st.rerun()
+    
+    # Quick actions
+    st.divider()
+    st.markdown("**Quick Actions:**")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📊 Explore"):
+            agent = get_agent()
+            response = agent.process_message("explore")
+            st.session_state.agent_messages.append({"role": "assistant", "content": response["text"]})
+            st.rerun()
+    with col2:
+        if st.button("❓ Help"):
+            agent = get_agent()
+            response = agent.process_message("help")
+            st.session_state.agent_messages.append({"role": "assistant", "content": response["text"]})
+            st.rerun()
+
 st.title("MilkyWay Analytics Framework")
 
 # BigQuery client for fetching table schemas
