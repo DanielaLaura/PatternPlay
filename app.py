@@ -10,6 +10,31 @@ st.set_page_config(page_title="MilkyWay Analytics", layout="wide")
 # --- Agent Sidebar ---
 with st.sidebar:
     st.header("🤖 Analytics Agent")
+    
+    # API Key configuration
+    with st.expander("⚙️ Settings", expanded=False):
+        api_key = st.text_input(
+            "Anthropic API Key", 
+            type="password", 
+            value=st.session_state.get("anthropic_api_key", ""),
+            help="Get your key at console.anthropic.com"
+        )
+        if api_key:
+            st.session_state["anthropic_api_key"] = api_key
+        
+        if st.button("🗑️ Clear Chat"):
+            st.session_state.agent_messages = []
+            agent = get_agent(st.session_state.get("anthropic_api_key"))
+            agent.clear_history()
+            st.rerun()
+    
+    # Show agent status
+    agent = get_agent(st.session_state.get("anthropic_api_key"))
+    if agent.is_llm_enabled:
+        st.success("✅ LLM Mode (Claude)")
+    else:
+        st.warning("⚡ Basic Mode (no API key)")
+    
     st.caption("Ask me anything about your data or patterns")
     
     # Initialize chat history
@@ -18,10 +43,12 @@ with st.sidebar:
     if "suggested_config" not in st.session_state:
         st.session_state.suggested_config = None
     
-    # Display chat history
-    for msg in st.session_state.agent_messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+    # Chat container with scroll
+    chat_container = st.container(height=300)
+    with chat_container:
+        for msg in st.session_state.agent_messages:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
     
     # Chat input
     if prompt := st.chat_input("Ask the agent...", key="agent_input"):
@@ -29,8 +56,9 @@ with st.sidebar:
         st.session_state.agent_messages.append({"role": "user", "content": prompt})
         
         # Get agent response
-        agent = get_agent()
-        response = agent.process_message(prompt)
+        agent = get_agent(st.session_state.get("anthropic_api_key"))
+        with st.spinner("Thinking..."):
+            response = agent.process_message(prompt)
         
         # Store suggested config if any
         if response.get("suggested_config"):
@@ -44,36 +72,60 @@ with st.sidebar:
     # Apply configuration button
     if st.session_state.suggested_config:
         st.divider()
-        st.markdown("**Suggested Configuration:**")
-        st.json(st.session_state.suggested_config)
-        if st.button("✅ Apply Configuration"):
-            config = st.session_state.suggested_config
-            # Store in session state for form to pick up
-            if "pattern" in config:
-                st.session_state["selected_pattern"] = config["pattern"]
-            if "activity_table" in config:
-                st.session_state["ga_activity_table"] = config["activity_table"]
-            if "time_grain" in config:
-                st.session_state["ga_time_grain"] = ["DAY", "WEEK", "MONTH", "QUARTER", "YEAR"].index(config["time_grain"])
-            st.session_state.suggested_config = None
-            st.rerun()
+        st.markdown("**📋 Suggested Configuration:**")
+        config = st.session_state.suggested_config
+        
+        # Nice display
+        for key, value in config.items():
+            if value:
+                st.text(f"  {key}: {value}")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("✅ Apply", use_container_width=True):
+                # Store in session state for form to pick up
+                if "pattern" in config:
+                    st.session_state["selected_pattern"] = config["pattern"]
+                if "activity_table" in config:
+                    st.session_state["applied_activity_table"] = config["activity_table"]
+                if "activity_customer_id" in config:
+                    st.session_state["applied_customer_id"] = config["activity_customer_id"]
+                if "activity_timestamp" in config:
+                    st.session_state["applied_timestamp"] = config["activity_timestamp"]
+                if "time_grain" in config:
+                    st.session_state["applied_time_grain"] = config["time_grain"]
+                st.session_state.suggested_config = None
+                st.success("Applied! Check the form.")
+                st.rerun()
+        with col2:
+            if st.button("❌ Dismiss", use_container_width=True):
+                st.session_state.suggested_config = None
+                st.rerun()
     
     # Quick actions
     st.divider()
     st.markdown("**Quick Actions:**")
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("📊 Explore"):
-            agent = get_agent()
-            response = agent.process_message("explore")
+        if st.button("📊 Explore", use_container_width=True):
+            agent = get_agent(st.session_state.get("anthropic_api_key"))
+            response = agent.process_message("What tables are available?")
+            st.session_state.agent_messages.append({"role": "user", "content": "What tables are available?"})
             st.session_state.agent_messages.append({"role": "assistant", "content": response["text"]})
             st.rerun()
     with col2:
-        if st.button("❓ Help"):
-            agent = get_agent()
+        if st.button("❓ Help", use_container_width=True):
+            agent = get_agent(st.session_state.get("anthropic_api_key"))
             response = agent.process_message("help")
+            st.session_state.agent_messages.append({"role": "user", "content": "Help"})
             st.session_state.agent_messages.append({"role": "assistant", "content": response["text"]})
             st.rerun()
+    
+    # Memory info
+    if agent.memory.memory.get("recent_tables"):
+        st.divider()
+        st.markdown("**🧠 Memory:**")
+        st.caption(f"Recent tables: {', '.join(agent.memory.memory['recent_tables'][:3])}")
 
 st.title("MilkyWay Analytics Framework")
 
@@ -128,7 +180,9 @@ if pattern == "growth_accounting":
     st.subheader("Inputs for Growth Accounting")
     
     st.markdown("**Activity Data (Required)**")
-    activity_table = st.text_input("Activity table (dataset.table)", "sessions.user_activity", key="ga_activity_table")
+    # Use applied config from agent if available
+    default_table = st.session_state.get("applied_activity_table", "sessions.user_activity")
+    activity_table = st.text_input("Activity table (dataset.table)", default_table, key="ga_activity_table")
     
     # Fetch columns from activity table
     activity_columns = get_table_columns(activity_table) if activity_table else []
@@ -141,7 +195,10 @@ if pattern == "growth_accounting":
         activity_timestamp = st.text_input("Timestamp column", "event_time", key="ga_timestamp_manual")
     
     st.markdown("**Time Grain**")
-    time_grain = st.selectbox("Time grain", ["DAY", "WEEK", "MONTH", "QUARTER", "YEAR"], index=2, key="ga_time_grain")
+    time_grain_options = ["DAY", "WEEK", "MONTH", "QUARTER", "YEAR"]
+    default_grain = st.session_state.get("applied_time_grain", "MONTH")
+    default_index = time_grain_options.index(default_grain) if default_grain in time_grain_options else 2
+    time_grain = st.selectbox("Time grain", time_grain_options, index=default_index, key="ga_time_grain")
     
     st.markdown("**First Activation Data (Optional)**")
     use_separate_activation = st.checkbox("Use separate first activation table", key="ga_use_activation")
